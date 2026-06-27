@@ -1,0 +1,363 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+enum TeamSection {
+  BoardOfDirectors
+  ResearchTeam
+  Alumni
+}
+
+model Study {
+  id                Int       @id @default(autoincrement())
+  slug              String    @unique
+  title             String
+  shortDescription  String
+  fullDescriptionEn String
+  fullDescriptionZh String
+  eligibilityEn     String
+  eligibilityZh     String
+  compensationEn    String
+  compensationZh    String
+  redcapUrl         String
+  contactEmail      String
+  contactPhone      String
+  contactPhoneZh    String
+  ethicsStatement   String
+  imagePath         String    @default("")
+  isActive          Boolean   @default(true)
+  status            String    @default("Recruiting")
+  category          String    @default("")
+  publishedAt       DateTime?
+  order             Int       @default(0)
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  pdfs StudyPdf[]
+
+  @@index([isActive, order])
+  @@index([status])
+}
+
+model TeamMember {
+  id          Int         @id @default(autoincrement())
+  name        String
+  title       String
+  section     TeamSection
+  bio         String
+  photoPath   String
+  orcidId     String?
+  profileUrl  String?
+  yearsActive String?
+  order       Int         @default(0)
+  isVisible   Boolean     @default(true)
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  publicationAuthors PublicationAuthor[]
+
+  @@index([section, order])
+  @@index([isVisible, order])
+}
+
+model CaseStudy {
+  id          Int      @id @default(autoincrement())
+  title       String
+  description String
+  pdfPath     String
+  uploadedAt  DateTime @default(now())
+}
+
+model ContactSubmission {
+  id           Int      @id @default(autoincrement())
+  name         String
+  // At least one of email/phone is present (enforced by the API; the column
+  // stays non-null with "" meaning "not given" so legacy rows are untouched).
+  email        String
+  phone        String?
+  // True when the enquirer gave both and ticked "I prefer to be contacted by
+  // phone" (the checkbox only shows when both are filled).
+  prefersPhone Boolean  @default(false)
+  category     String
+  message      String
+  submittedAt  DateTime @default(now())
+}
+
+model PartnerLogo {
+  id            Int     @id @default(autoincrement())
+  name          String
+  logoPath      String
+  websiteUrl    String
+  isPlaceholder Boolean @default(false)
+  group         String  @default("Collaborating")
+  order         Int     @default(0)
+
+  @@index([group, order])
+  @@index([order])
+}
+
+// The admin-managed inquiry types AND their routing, one row per type. The
+// public form's dropdown, /api/contact's category validation, and the
+// notification recipient all read from here. `category` is the immutable
+// canonical key stored on ContactSubmission rows — renames touch only the
+// labels, so history and routing stay stable. Removal = isArchived (soft):
+// the type leaves the form but historical submissions keep resolving.
+model ContactRecipient {
+  id         Int      @id @default(autoincrement())
+  category   String   @unique
+  email      String
+  labelEn    String   @default("")
+  labelZh    String   @default("")
+  order      Int      @default(0)
+  isArchived Boolean  @default(false)
+  updatedAt  DateTime @updatedAt
+
+  @@index([isArchived, order])
+}
+
+model StudyPdf {
+  id         Int      @id @default(autoincrement())
+  studyId    Int
+  title      String
+  // The stored file name — a display label only, no longer a path or URL. Mapped
+  // to the legacy `pdfPath` column so existing rows keep working without a data
+  // migration. The bytes themselves live in `data` and are streamed by
+  // GET /api/studies/pdf/[id] — Render's filesystem is ephemeral, so files
+  // written to public/ at runtime don't survive a redeploy.
+  fileName   String   @map("pdfPath")
+  // The PDF bytes. Nullable so pre-existing rows (whose disk files were lost)
+  // don't break; those return 404 until re-uploaded. Kept out of every list/
+  // render query via the global `omit` in src/lib/prisma.ts — only the download
+  // route selects it.
+  data       Bytes?
+  mimeType   String   @default("application/pdf")
+  order      Int      @default(0)
+  uploadedAt DateTime @default(now())
+
+  study Study @relation(fields: [studyId], references: [id], onDelete: Cascade)
+
+  @@index([studyId, order])
+}
+
+model PublicationCategory {
+  id    Int    @id @default(autoincrement())
+  name  String @unique
+  order Int    @default(0)
+
+  publications Publication[]
+
+  @@index([order])
+}
+
+model Publication {
+  id              Int      @id @default(autoincrement())
+  title           String
+  authorsRaw      String   @default("")
+  journal         String?
+  year            Int?
+  doi             String?
+  pubType         String   @default("Journal Article")
+  url             String?
+  abstract        String?
+  affiliation     String?
+
+  sourceType      String   @default("ORCID")   // ORCID / PubMed
+  sourceId        String?                      // ORCID put-code or PMID
+  orcidSource     String?
+  status          String   @default("Pending") // Pending / Approved / Rejected
+  isVisible       Boolean  @default(true)
+  hiddenManually  Boolean  @default(false)
+  matchedKeywords String   @default("")
+  // Per-paper affiliation snippet(s) that matched the unit/institution filter
+  // during the last ORCID/OpenAlex sync (empty when nothing matched).
+  matchedAffiliation String @default("")
+  // Human-readable explanation of the last automatic relevance decision
+  // (e.g. "before 1998", "unit phrasing: Human Nutrition Unit"). Surfaced in admin.
+  relevanceReason String   @default("")
+  // Set true once an admin approves/rejects via the PATCH route. When true, the
+  // ORCID sync MUST NOT overwrite `status` — preserves human review across re-syncs.
+  reviewedManually Boolean @default(false)
+  lastSyncedAt    DateTime?
+
+  categoryId      Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  category        PublicationCategory? @relation(fields: [categoryId], references: [id])
+  authors         PublicationAuthor[]
+
+  @@unique([sourceType, sourceId])
+  @@index([status, year])
+  @@index([categoryId])
+}
+
+model PublicationAuthor {
+  id            Int @id @default(autoincrement())
+  publicationId Int
+  teamMemberId  Int
+  order         Int @default(0)
+
+  publication Publication @relation(fields: [publicationId], references: [id], onDelete: Cascade)
+  teamMember  TeamMember  @relation(fields: [teamMemberId], references: [id], onDelete: Cascade)
+
+  @@unique([publicationId, teamMemberId])
+  @@index([teamMemberId])
+}
+
+// Tombstone for a hard-deleted publication. The ORCID/OpenAlex sync consults
+// these so a paper an admin deleted is NOT re-created on the next sync. A synced
+// work is skipped when ANY of three signals matches a tombstone: the composite
+// {sourceType, sourceId}, the normalized DOI, or the title+year dedup key
+// (buildPublicationDedupKey) — the last covers DOI-less works whose ORCID
+// put-code changed on re-import. See src/app/api/admin/publications/sync/route.ts.
+model DeletedPublication {
+  id           Int      @id @default(autoincrement())
+  sourceType   String
+  sourceId     String? // composite "${orcidId}:${putCode}" of the deleted row; may be null
+  doi          String? // normalized (trim+lowercase) DOI of the deleted row
+  titleYearKey String? // buildPublicationDedupKey(title, year) — survives put-code/DOI drift
+  title        String? // retained for admin auditing only
+  year         Int?
+  deletedAt    DateTime @default(now())
+
+  @@index([sourceType, sourceId])
+  @@index([doi])
+}
+
+// Singleton (expected: exactly one row, id = 1) holding the admin-editable
+// relevance filter used by the ORCID publications sync. List-type fields are
+// stored as newline-separated text because SQLite has no array type; the sync
+// route parses them with parseLines() in src/lib/publication-filter.ts.
+model PublicationFilterSetting {
+  id                Int      @id @default(autoincrement())
+  // Works published before this year are auto-rejected.
+  minYear           Int      @default(1998)
+  // Phrasings matched (normalised `includes`) against per-paper affiliation
+  // strings from OpenAlex. A hit is a STRONG relevance signal.
+  affiliationPhrases String  @default("")
+  // ROR IDs of accepted institutions (e.g. University of Auckland 03b94tp07).
+  // An institution-only hit (no unit phrasing) is a WEAK signal.
+  institutionRors   String   @default("")
+  // Title/journal/abstract keywords: a single strong hit can approve a work.
+  strongKeywords    String   @default("")
+  // Weaker keywords: only meaningful in combination (>=2, or alongside affiliation).
+  weakKeywords      String   @default("")
+  // Off-topic keywords that push a work toward Rejected unless a strong signal exists.
+  exclusionKeywords String   @default("")
+  // Where each kind of relevance match sends a synced work. Each holds one of
+  // "Approved" | "Pending" | "Rejected"; the admin edits these in /admin/publications.
+  // Defaults encode the affiliation-only auto-approval policy (only a unit-name
+  // match auto-approves; keyword-only matches wait in Pending).
+  routeUnitAffiliation    String @default("Approved")
+  routeInstitutionKeyword String @default("Pending")
+  routeStrongKeywords     String @default("Pending")
+  routeWeakMatch          String @default("Pending")
+  routeExclusion          String @default("Rejected")
+  // A work with NO signal at all (no unit affiliation, no accepted institution,
+  // no keywords, no exclusion term). Defaults to Pending so genuinely ambiguous
+  // works are surfaced for human review rather than silently auto-rejected.
+  routeNoSignal           String @default("Pending")
+  updatedAt         DateTime @updatedAt
+}
+
+// A public page whose content is composed from an ordered list of blocks.
+model Page {
+  id        Int         @id @default(autoincrement())
+  slug      String      @unique
+  title     String
+  updatedAt DateTime    @updatedAt
+  createdAt DateTime    @default(now())
+
+  // Published snapshot the public site renders. The live PageBlock rows are the
+  // editable draft; "publish" copies them here. Null = never published, in which
+  // case the public render falls back to the live blocks.
+  publishedContent String?
+  publishedAt      DateTime?
+
+  blocks    PageBlock[]
+  revisions PageRevision[]
+}
+
+// A point-in-time snapshot of a page's published content, captured on each
+// publish so previous versions can be restored. Pruned to the most recent few.
+model PageRevision {
+  id        Int      @id @default(autoincrement())
+  pageId    Int
+  content   String // JSON: [{ type, content }] of the published (visible) blocks
+  label     String?
+  createdAt DateTime @default(now())
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, createdAt])
+}
+
+// A single content section on a page. `type` keys into the block registry in
+// src/lib/blocks/registry.ts; `content` is a JSON string holding type-specific props
+// (SQLite has no native JSON type).
+model PageBlock {
+  id        Int      @id @default(autoincrement())
+  pageId    Int
+  type      String
+  content   String   @default("{}")
+  position  Int      @default(0)
+  isVisible Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  page Page @relation(fields: [pageId], references: [id], onDelete: Cascade)
+
+  @@index([pageId, position])
+}
+
+// Cache of machine translations for the auto-translated (non-study) site copy.
+// Populated when an admin publishes/saves content (translate-on-write); the
+// public render only READS from here and never calls the translation API, so the
+// site renders translated content even with no API key configured at run time.
+// Keyed by a hash of the source string, so an entry is reused until the source
+// text changes (its hash changes). Study-detail content is never stored here.
+model TranslationCache {
+  id             Int      @id @default(autoincrement())
+  targetLang     String // e.g. "ZH"
+  format         String   @default("text") // "text" | "html"
+  sourceHash     String // sha256 hex of the source string
+  sourceText     String // retained for debugging / re-translation audits
+  translatedText String
+  provider       String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([targetLang, format, sourceHash])
+  @@index([targetLang])
+}
+
+// A centrally managed image asset. Files live under /public/uploads/media.
+model MediaAsset {
+  id           Int      @id @default(autoincrement())
+  filePath     String   @unique
+  originalName String
+  altText      String   @default("")
+  caption      String   @default("")
+  width        Int?
+  height       Int?
+  mimeType     String
+  size         Int
+  uploadedAt   DateTime @default(now())
+}
+
+// Site-wide branding assets, editable from the admin console. A singleton row
+// (id = 1). An empty string means "use the built-in default asset", so a reset
+// never needs a reseed and the defaults can change in code later. Uploaded
+// files live under /public/uploads/branding.
+model SiteSettings {
+  id            Int      @id @default(autoincrement())
+  faviconPath   String   @default("")
+  logoLightPath String   @default("") // white-on-dark (desktop navbar)
+  logoDarkPath  String   @default("") // blue-on-light (mobile bar)
+  donateUrl     String   @default("") // navbar "Donations" link; "" = built-in default
+  updatedAt     DateTime @updatedAt
+}

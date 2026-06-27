@@ -1,0 +1,160 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+
+  /* UoA Brand Colours */
+  /* Primary */
+  --uoa-waitemata: #0c0c48;
+  --uoa-navy: #0c0c48; /* alias */
+
+  /* Secondary */
+  --uoa-azure: #1f2bd4;
+  --uoa-mahina: #00caef;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-inter);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-inter), sans-serif;
+  /* Break overlong unbroken strings (e.g. a pasted long URL or token) so admin
+     content can never force horizontal page overflow. Inherited, and a no-op for
+     normal text — it only acts when a "word" would otherwise overflow its box. */
+  overflow-wrap: break-word;
+}
+
+@keyframes marquee {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+
+@keyframes slideDown {
+  from {
+    transform: translateY(-100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideUp {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(-100%);
+  }
+}
+
+.dropdown-open {
+  animation: slideDown 0.3s ease-out;
+}
+
+.dropdown-closing {
+  animation: slideUp 0.3s ease-out;
+}
+
+.marquee-track {
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  width: max-content;
+  animation: marquee 28s linear infinite;
+}
+
+/* Respect prefers-reduced-motion (B53 / A11Y-10/11): make animations and
+   transitions near-instant globally, and fully stop the continuously-scrolling
+   partner marquee so it doesn't loop forever. Components that auto-advance
+   (Updates carousel) also read this preference in JS to pause themselves. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .marquee-track {
+    animation: none !important;
+  }
+}
+
+input[type="search"]::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+  height: 20px;
+  width: 20px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='white' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 18L18 6M6 6l12 12'/%3E%3C/svg%3E");
+  background-size: contain;
+  background-repeat: no-repeat;
+  cursor: pointer;
+}
+
+
+.nav-link {
+  position: relative;
+}
+
+.nav-link::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -6px;
+  width: 100%;
+  height: 2px;
+  background: white;
+
+  transform: scaleX(0);
+  transform-origin: right;
+
+  transition: transform 0.35s ease;
+}
+
+.nav-link:hover::after {
+  transform: scaleX(1);
+  transform-origin: left;
+}
+
+
+/* Navbar Studies dropdown: keep the horizontal scrollbar visible (not
+   overlay/auto-hidden) so extra studies beyond the three-card width are
+   discoverable on the dark blurred header. */
+.studies-dropdown-scroll {
+  scrollbar-width: thin; /* Firefox */
+  scrollbar-color: rgba(255, 255, 255, 0.55) transparent;
+}
+
+.studies-dropdown-scroll::-webkit-scrollbar {
+  height: 8px;
+}
+
+.studies-dropdown-scroll::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.55);
+  border-radius: 9999px;
+}
+
+.studies-dropdown-scroll::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.12);
+  border-radius: 9999px;
+}
